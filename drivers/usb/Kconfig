@@ -26,6 +26,7 @@ config USB_ARCH_HAS_OHCI
 	# MIPS:
 	default y if MIPS_ALCHEMY
 	default y if MACH_JZ4740
+	default y if MACH_LOONGSON1
 	# more:
 	default PCI
 

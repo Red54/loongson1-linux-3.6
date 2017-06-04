@@ -65,9 +65,12 @@ static void pll_clk_init(struct clk *clk)
 	u32 pll;
 
 	pll = __raw_readl(LS1X_CLK_PLL_FREQ);
-	clk->rate = (12 + (pll & 0x3f)) * 33 / 2
-			+ ((pll >> 8) & 0x3ff) * 33 / 1024 / 2;
-	clk->rate *= 1000000;
+#if defined(CONFIG_LOONGSON1_LS1C)
+	clk->rate = (((pll >> 8) & 0xff) + ((pll >> 16) & 0xff)) * APB_CLK / 4;
+#else
+	clk->rate = (12 + (pll & 0x3f)) * APB_CLK / 2
+			+ ((pll >> 8) & 0x3ff) * APB_CLK / 1024 / 2;
+#endif
 }
 
 static void cpu_clk_init(struct clk *clk)
@@ -75,8 +78,24 @@ static void cpu_clk_init(struct clk *clk)
 	u32 pll, ctrl;
 
 	pll = clk_get_rate(clk->parent);
-	ctrl = __raw_readl(LS1X_CLK_PLL_DIV) & DIV_CPU;
-	clk->rate = pll / (ctrl >> DIV_CPU_SHIFT);
+	ctrl = __raw_readl(LS1X_CLK_PLL_DIV);
+#if defined(CONFIG_LOONGSON1_LS1A)
+	/* 由于目前loongson 1A CPU读取0xbfe78030 PLL寄存器有问题，
+	   所以CPU的频率是通过PMON传进来的 */
+	clk->rate = cpu_clock_freq;
+#elif defined(CONFIG_LOONGSON1_LS1B)
+	clk->rate = pll / ((ctrl & DIV_CPU) >> DIV_CPU_SHIFT);
+#else
+	if (ctrl & DIV_CPU_SEL) {
+		if(ctrl & DIV_CPU_EN) {
+			clk->rate = pll / ((ctrl & DIV_CPU) >> DIV_CPU_SHIFT);
+		} else {
+			clk->rate = pll / 2;
+		}
+	} else {
+		clk->rate = APB_CLK;
+	}
+#endif
 }
 
 static void ddr_clk_init(struct clk *clk)
@@ -84,8 +103,40 @@ static void ddr_clk_init(struct clk *clk)
 	u32 pll, ctrl;
 
 	pll = clk_get_rate(clk->parent);
-	ctrl = __raw_readl(LS1X_CLK_PLL_DIV) & DIV_DDR;
-	clk->rate = pll / (ctrl >> DIV_DDR_SHIFT);
+	ctrl = __raw_readl(LS1X_CLK_PLL_DIV);
+#if defined(CONFIG_LOONGSON1_LS1A)
+	/* 由于目前loongson 1A CPU读取0xbfe78030 PLL寄存器有问题，
+	   所以BUS(DDR)的频率是通过PMON传进来的 */
+	clk->rate = ls1x_bus_clock;
+#elif defined(CONFIG_LOONGSON1_LS1B)
+	clk->rate = pll / ((ctrl & DIV_DDR) >> DIV_DDR_SHIFT);
+#else
+	ctrl = __raw_readl(LS1X_CLK_PLL_FREQ) & 0x3;
+	switch	 (ctrl) {
+		case 0:
+			clk->rate = pll / 2;
+		break;
+		case 1:
+			clk->rate = pll / 4;
+		break;
+		case 2:
+		case 3:
+			clk->rate = pll / 3;
+		break;
+	}
+#endif
+}
+
+static void apb_clk_init(struct clk *clk)
+{
+	u32 pll;
+
+	pll = clk_get_rate(clk->parent);
+#if defined(CONFIG_LOONGSON1_LS1C)
+	clk->rate = pll;
+#else
+	clk->rate = pll / 2;
+#endif
 }
 
 static void dc_clk_init(struct clk *clk)
@@ -109,6 +160,10 @@ static struct clk_ops ddr_clk_ops = {
 	.init	= ddr_clk_init,
 };
 
+static struct clk_ops apb_clk_ops = {
+	.init	= apb_clk_init,
+};
+
 static struct clk_ops dc_clk_ops = {
 	.init	= dc_clk_init,
 };
@@ -126,8 +181,18 @@ static struct clk cpu_clk = {
 
 static struct clk ddr_clk = {
 	.name	= "ddr",
+#if defined(CONFIG_LOONGSON1_LS1C)
+	.parent = &cpu_clk,
+#else
 	.parent = &pll_clk,
+#endif
 	.ops	= &ddr_clk_ops,
+};
+
+static struct clk apb_clk = {
+	.name	= "apb",
+	.parent = &ddr_clk,
+	.ops	= &apb_clk_ops,
 };
 
 static struct clk dc_clk = {
@@ -152,6 +217,7 @@ static struct clk *ls1x_clks[] = {
 	&pll_clk,
 	&cpu_clk,
 	&ddr_clk,
+	&apb_clk,
 	&dc_clk,
 };
 

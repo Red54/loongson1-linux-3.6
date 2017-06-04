@@ -174,6 +174,7 @@ static void stmmac_verify_args(void)
 
 static void stmmac_clk_csr_set(struct stmmac_priv *priv)
 {
+#ifndef CONFIG_MACH_LOONGSON1
 	u32 clk_rate;
 
 	clk_rate = clk_get_rate(priv->stmmac_clk);
@@ -197,6 +198,7 @@ static void stmmac_clk_csr_set(struct stmmac_priv *priv)
 	   * we can not estimate the proper divider as it is not known
 	   * the frequency of clk_csr_i. So we do not change the default
 	   * divider. */
+#endif
 }
 
 #if defined(STMMAC_XMIT_DEBUG) || defined(STMMAC_RX_DEBUG)
